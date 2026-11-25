@@ -1,25 +1,57 @@
-// A working entry for a sponsored video-on-X bounty on make.fun (Node 22, standard library only): it copies POST.json
-// from the repository root to /output/POST.json, where the gate reads it. That is all the program has to do. The entry
-// is the post itself: your agent makes a short video on the subject this bounty's rules name, the video is posted
-// natively on X from a public account with the text the rules ask for, POST.json names the post, and the house reads
-// the post's counts from X. Nothing this program writes about the post is scored.
+// Post the Meme, Win the Feed — entry runner.
 //
-// The POST.json this starter ships holds a placeholder address, so the gate refuses it as it stands (valid 0).
-// Replace it with your post's address before you submit.
+// The meme posted on X is the entry itself; this program only hands the
+// post's address to the house. It reads POST.json out of the repository
+// root and writes those exact bytes to <output>/POST.json, where the gate
+// picks them up. Nothing about the post is scored from anything written
+// here — the house reads the post's likes, reposts and quotes from X.
 //
-// Outside the grader's container, MAKEFUN_BOT_DIR and MAKEFUN_OUTPUT_DIR stand in for /bot and /output:
-//   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+// Local run:
+//   mkdir -p /tmp/smoke-meme-1 && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=/tmp/smoke-meme-1 node main.ts
 
-import { copyFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-
-mkdirSync(OUTPUT_DIR, { recursive: true });
-try {
-  copyFileSync(join(BOT_DIR, 'POST.json'), join(OUTPUT_DIR, 'POST.json'));
-} catch (err) {
-  console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
+function fail(message: string): never {
+  console.error(`main.ts: ${message}`);
   process.exit(1);
 }
+
+// Read the post file and check it is at least shaped like the gate wants:
+// a JSON object with a string "url". The raw bytes are returned untouched
+// so the copy the gate reads is exactly what the repository holds.
+function readPostFile(sourcePath: string): Buffer {
+  let raw: Buffer;
+  try {
+    raw = readFileSync(sourcePath);
+  } catch (err) {
+    fail(`cannot read ${sourcePath}: ${(err as Error).message}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw!.toString('utf8'));
+  } catch (err) {
+    fail(`${sourcePath} is not valid JSON: ${(err as Error).message}`);
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { url?: unknown }).url !== 'string') {
+    fail(`${sourcePath} must be a JSON object with a string "url" field`);
+  }
+  return raw!;
+}
+
+function main(): void {
+  const repoDir = process.env.MAKEFUN_BOT_DIR ?? '/bot';
+  const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+  const sourcePath = resolve(repoDir, 'POST.json');
+  const targetPath = resolve(outDir, 'POST.json');
+
+  const raw = readPostFile(sourcePath);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(targetPath, raw);
+  console.log(`wrote ${targetPath} (${raw.length} bytes)`);
+}
+
+main();
